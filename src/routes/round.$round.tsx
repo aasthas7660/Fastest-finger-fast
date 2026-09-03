@@ -11,13 +11,18 @@ import {
 } from "@/lib/quiz-data";
 import {
   finalUnlocked,
-  finalists,
   groupsForRound,
-  roundPlayed,
   totalScore,
+  ensureQuestion,
+  fetchQuestionData,
+  expireQuestion,
+  submitAnswer,
   useQuiz,
+  type QuizAnswerEvent,
+  type QuizQuestionState,
   type Group,
 } from "@/lib/quiz-store";
+import { supabase } from "@/integrations/supabase/client";
 
 export const Route = createFileRoute("/round/$round")({
   params: {
@@ -46,21 +51,14 @@ export const Route = createFileRoute("/round/$round")({
 function RoundPage() {
   const { round } = Route.useParams();
   const r = Number(round);
-  const { groups, hydrated, recordScore } = useQuiz();
-  const [activeGroup, setActiveGroup] = useState<Group | null>(null);
-  const [finished, setFinished] = useState<{ group: Group; score: number } | null>(null);
+  const { groups, hydrated } = useQuiz();
 
-  const top2 = finalists(groups);
   const eligible = groupsForRound(groups, r);
   const questions = QUESTIONS[r] ?? [];
   const locked = r === 3 && !finalUnlocked(groups);
 
-  useEffect(() => {
-    setActiveGroup(null);
-    setFinished(null);
-  }, [r]);
-
-  if (!hydrated) return <div className="px-6 py-20 text-center text-muted-foreground">Loading…</div>;
+  if (!hydrated)
+    return <div className="px-6 py-20 text-center text-muted-foreground">Loading…</div>;
 
   return (
     <div className="mx-auto w-full max-w-3xl px-4 py-12 sm:px-6">
@@ -75,195 +73,134 @@ function RoundPage() {
         </p>
       </header>
 
-      {finished ? (
-        <RoundResult
-          round={r}
-          group={finished.group}
-          score={finished.score}
-          onReplayPick={() => {
-            setFinished(null);
-            setActiveGroup(null);
-          }}
-        />
-      ) : activeGroup ? (
-        <QuizRunner
-          key={activeGroup.id}
-          group={activeGroup}
-          questions={questions}
-          onDone={(score, correct, timeSpent) => {
-            void recordScore(activeGroup.id, r, score, correct, timeSpent);
-            setFinished({ group: activeGroup, score });
-          }}
-        />
-      ) : (
+      {locked ? (
         <div className="panel mt-8 p-6">
-          {groups.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No groups added yet.{" "}
-              <Link to="/" className="text-primary underline">
-                Set up groups on the home page
-              </Link>
-              .
+          <div>
+            <h2 className="text-lg font-bold">Round 3 is locked</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Both bracket winners must finish before the shared final can begin.
             </p>
-          ) : locked ? (
-            <div>
-              <h2 className="text-lg font-bold">Round 3 is locked</h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Every Bracket A group must finish Round 1 and every Bracket B group must finish
-                Round 2. Only the highest scorer from each bracket qualifies for the finale.
-              </p>
-              <Link to="/" className="btn-ghost mt-5 hover:bg-secondary">
-                <Home className="size-4" /> Back to home
-              </Link>
-            </div>
-          ) : (
-            <div>
-              <h2 className="text-lg font-bold">
-                {r === 3 ? "Finalists — pick who plays" : "Select the group that is playing"}
-              </h2>
-              {r === 3 ? (
-                <div className="mt-3 space-y-3">
-                  <p className="font-mono text-xs tracking-[0.3em] text-accent">FINALISTS</p>
-                  <div className="grid gap-3 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
-                    {top2.map((g, i) => (
-                      <div key={g.id} className="contents">
-                        <div className="rounded-xl border border-primary/40 bg-primary/10 px-4 py-4 text-center">
-                          <p className="text-[11px] font-semibold tracking-wider text-muted-foreground">
-                            Round {g.qualifiedFromRound ?? (i === 0 ? 1 : 2)} Winner
-                          </p>
-                          <p className="mt-1 text-base font-bold">{g.name}</p>
-                          <p className="mt-1 font-mono text-sm text-primary">
-                            Score: {g.scores[g.qualifiedFromRound ?? (i === 0 ? 1 : 2)] ?? 0}
-                          </p>
-                        </div>
-                        {i === 0 && (
-                          <span className="text-center font-display text-sm font-black text-muted-foreground">
-                            VS
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                  <p className="text-sm text-muted-foreground">
-                    2 teams qualified for the final round. Groups that did not qualify cannot start
-                    Round 3.
-                  </p>
-                </div>
-              ) : (
-                <p className="mt-2 text-sm text-muted-foreground">
-                  Only Bracket {r === 1 ? "A" : "B"} groups play this round.
-                </p>
-              )}
-              {eligible.length === 0 && (
-                <p className="mt-4 text-sm text-muted-foreground">
-                  No groups assigned to this round.
-                </p>
-              )}
-              <div className="mt-5 space-y-3">
-                {eligible.map((g) => {
-                  const played = roundPlayed(g, r);
-                  return (
-                    <button
-                      key={g.id}
-                      disabled={played}
-                      onClick={() => setActiveGroup(g)}
-                      className={`flex w-full items-center justify-between rounded-xl border border-border bg-secondary/40 px-4 py-4 text-left transition-colors ${
-                        played ? "opacity-50" : "hover:border-primary"
-                      }`}
-                    >
-                      <span className="text-sm font-semibold">{g.name}</span>
-                      <span className="font-mono text-xs text-muted-foreground">
-                        {played ? `Done · ${g.scores[r]} pts` : `Total ${totalScore(g)} pts`}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-              {r === 3 && eligible.length === 2 && eligible.every((g) => roundPlayed(g, 3)) && (
-                <FinalWinner finalists={eligible} />
-              )}
-              {eligible.length > 0 && eligible.every((g) => roundPlayed(g, r)) && (
-                <div className="mt-6 rounded-xl border border-primary/40 bg-primary/10 p-4 text-sm">
-                  Round {r} is complete for all groups.
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    <Link to="/" className="btn-primary hover:btn-primary-hover">
-                      <Home className="size-4" /> Home page
-                    </Link>
-                    {r < 3 && (
-                      <Link
-                        to="/round/$round"
-                        params={{ round: String(r + 1) }}
-                        className="btn-ghost hover:bg-secondary"
-                      >
-                        Round {r + 1} <ArrowRight className="size-4" />
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
+            <Link to="/" className="btn-ghost mt-5 hover:bg-secondary">
+              <Home className="size-4" /> Back to home
+            </Link>
+          </div>
         </div>
+      ) : groups.length === 0 ? (
+        <div className="panel mt-8 p-6">
+          <p className="text-sm text-muted-foreground">
+            No groups added yet.{" "}
+            <Link to="/" className="text-primary underline">
+              Set up groups on the home page
+            </Link>
+            .
+          </p>
+        </div>
+      ) : (
+        <SharedQuizRunner key={r} round={r} groups={eligible} questions={questions} />
       )}
     </div>
   );
 }
 
-function QuizRunner({
-  group,
+function SharedQuizRunner({
+  round,
+  groups,
   questions,
-  onDone,
 }: {
-  group: Group;
+  round: number;
+  groups: Group[];
   questions: { q: string; options: string[]; answer: number }[];
-  onDone: (score: number, correct: number, timeSpent: number) => void;
 }) {
   const [index, setIndex] = useState(0);
-  const [score, setScore] = useState(0);
-  const [correct, setCorrect] = useState(0);
-  const [startedAt] = useState(() => Date.now());
-  const [picked, setPicked] = useState<number | null>(null);
+  const [state, setState] = useState<QuizQuestionState | null>(null);
+  const [answers, setAnswers] = useState<QuizAnswerEvent[]>([]);
   const [timeLeft, setTimeLeft] = useState(QUESTION_TIME);
 
   const question = questions[index]!;
 
   useEffect(() => {
-    setTimeLeft(QUESTION_TIME);
-    setPicked(null);
-  }, [index]);
+    let alive = true;
+    const load = async () => {
+      const nextState = await ensureQuestion(round, index + 1);
+      const data = await fetchQuestionData(nextState.id);
+      if (alive) {
+        setState(data.question);
+        setAnswers(data.answers);
+      }
+    };
+    void load();
+    return () => {
+      alive = false;
+    };
+  }, [index, round]);
 
   useEffect(() => {
-    if (picked !== null) return;
-    if (timeLeft <= 0) {
-      setPicked(-1);
-      return;
-    }
-    const t = setTimeout(() => setTimeLeft((v) => v - 1), 1000);
-    return () => clearTimeout(t);
-  }, [timeLeft, picked]);
+    const questionId = state?.id;
+    if (!questionId) return;
+    const channel = supabase
+      .channel(`question-${questionId}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "quiz_questions", filter: `id=eq.${questionId}` },
+        () => {
+          void fetchQuestionData(questionId).then((data) => {
+            setState(data.question);
+            setAnswers(data.answers);
+          });
+        },
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "quiz_answer_events",
+          filter: `question_id=eq.${questionId}`,
+        },
+        () => {
+          void fetchQuestionData(questionId).then((data) => {
+            setState(data.question);
+            setAnswers(data.answers);
+          });
+        },
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [state?.id]);
 
-  const answer = (i: number) => {
-    if (picked !== null) return;
-    setPicked(i);
-    if (i === question.answer) setCorrect((c) => c + 1);
-    setScore((s) => s + (i === question.answer ? POINTS_CORRECT : POINTS_WRONG));
-  };
+  useEffect(() => {
+    if (!state || state.status !== "ACTIVE") return;
+    const tick = () => {
+      const remaining = QUESTION_TIME - (Date.now() - Date.parse(state.started_at)) / 1000;
+      setTimeLeft(Math.max(0, Math.ceil(remaining)));
+      if (remaining <= 0) void expireQuestion(state.id);
+    };
+    tick();
+    const timer = setInterval(tick, 250);
+    return () => clearInterval(timer);
+  }, [state]);
 
-  const next = () => {
-    if (index + 1 >= questions.length)
-      onDone(score, correct, (Date.now() - startedAt) / 1000);
-    else setIndex(index + 1);
+  const answer = async (teamId: string, selectedAnswer: number) => {
+    if (!state || state.status !== "ACTIVE" || answers.some((a) => a.team_id === teamId)) return;
+    await submitAnswer(round, index + 1, teamId, selectedAnswer, question.answer);
+    const data = await fetchQuestionData(state.id);
+    setState(data.question);
+    setAnswers(data.answers);
   };
 
   const pct = (timeLeft / QUESTION_TIME) * 100;
+  const completed = state?.status !== "ACTIVE";
+  const roundFinished = completed && index + 1 >= questions.length;
 
   return (
     <div className="panel mt-8 p-6">
       <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground">
         <span>
-          {group.name} · Question {index + 1}/{questions.length}
+          All teams · Question {index + 1}/{questions.length}
         </span>
-        <span className="font-mono text-primary">Score {score}</span>
+        <span className="font-mono text-primary">{completed ? state?.status : "LIVE"}</span>
       </div>
 
       <div className="mt-4 flex items-center gap-3">
@@ -280,49 +217,70 @@ function QuizRunner({
       </div>
 
       <h2 className="mt-6 text-xl font-bold leading-snug">{question.q}</h2>
-
-      <div className="mt-5 grid gap-3">
-        {question.options.map((opt, i) => {
-          const isAnswer = i === question.answer;
-          const revealed = picked !== null;
-          const state = !revealed
-            ? "border-border bg-secondary/40 hover:border-primary"
-            : isAnswer
-              ? "border-success bg-success/15"
-              : i === picked
-                ? "border-destructive bg-destructive/15"
-                : "border-border bg-secondary/20 opacity-60";
+      <div className="mt-5 grid gap-4">
+        {groups.map((group) => {
+          const event = answers.find((item) => item.team_id === group.id);
           return (
-            <button
-              key={i}
-              onClick={() => answer(i)}
-              disabled={revealed}
-              className={`flex items-center justify-between rounded-xl border px-4 py-3.5 text-left text-sm font-medium transition-colors ${state}`}
-            >
-              <span>{opt}</span>
-              {revealed && isAnswer && <CheckCircle2 className="size-4 text-success" />}
-              {revealed && !isAnswer && i === picked && (
-                <XCircle className="size-4 text-destructive" />
+            <div key={group.id} className="rounded-xl border border-border bg-secondary/30 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <span className="font-semibold">{group.name}</span>
+                <span className="font-mono text-xs text-muted-foreground">
+                  Total {totalScore(group)} pts
+                </span>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {question.options.map((option, optionIndex) => (
+                  <button
+                    key={option}
+                    disabled={Boolean(event) || completed || timeLeft <= 0}
+                    onClick={() => void answer(group.id, optionIndex)}
+                    className={`flex items-center justify-between rounded-lg border px-3 py-2.5 text-left text-sm ${event ? (optionIndex === event.selected_answer ? (event.is_correct ? "border-success bg-success/15" : "border-destructive bg-destructive/15") : "opacity-50") : "border-border bg-background hover:border-primary"}`}
+                  >
+                    {option}
+                    {event &&
+                      optionIndex === event.selected_answer &&
+                      (event.is_correct ? (
+                        <CheckCircle2 className="size-4 text-success" />
+                      ) : (
+                        <XCircle className="size-4 text-destructive" />
+                      ))}
+                  </button>
+                ))}
+              </div>
+              {event && (
+                <p
+                  className={`mt-2 text-xs ${event.is_correct ? "text-success" : "text-destructive"}`}
+                >
+                  {event.is_correct
+                    ? `Correct! +${POINTS_CORRECT} points`
+                    : `Wrong! ${POINTS_WRONG} points`}{" "}
+                  · Answer {event.answer_order}
+                </p>
               )}
-            </button>
+            </div>
           );
         })}
       </div>
-
-      {picked !== null && (
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+      {completed && (
+        <div className="mt-6 flex items-center justify-between gap-3">
           <p className="text-sm text-muted-foreground">
-            {picked === -1
-              ? "Time up — no points awarded."
-              : picked === question.answer
-                ? `Correct! +${POINTS_CORRECT} points.`
-                : `Wrong. ${POINTS_WRONG} points.`}
+            Correct answer:{" "}
+            <span className="font-semibold text-success">{question.options[question.answer]}</span>
           </p>
-          <button onClick={next} className="btn-primary hover:btn-primary-hover">
-            {index + 1 >= questions.length ? "Finish round" : "Next question"}
-            <ArrowRight className="size-4" />
-          </button>
+          {!roundFinished && (
+            <button
+              onClick={() => setIndex((value) => value + 1)}
+              className="btn-primary hover:btn-primary-hover"
+            >
+              Next question <ArrowRight className="size-4" />
+            </button>
+          )}
         </div>
+      )}
+      {roundFinished && (
+        <p className="mt-6 text-center text-sm font-semibold text-success">
+          Round complete. Scores are stored centrally.
+        </p>
       )}
     </div>
   );

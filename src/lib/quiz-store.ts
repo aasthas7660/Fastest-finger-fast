@@ -11,6 +11,27 @@ export type Group = {
   qualifiedFromRound: 1 | 2 | null;
 };
 
+export type QuizQuestionState = {
+  id: string;
+  round: number;
+  question_number: number;
+  status: "ACTIVE" | "COMPLETED" | "TIMEOUT";
+  started_at: string;
+  completed_at: string | null;
+};
+
+export type QuizAnswerEvent = {
+  id: string;
+  question_id: string;
+  team_id: string;
+  round: number;
+  selected_answer: number;
+  is_correct: boolean;
+  points_awarded: number;
+  answer_order: number;
+  submitted_at: string;
+};
+
 export const GROUP_SIZE = 5;
 
 /** Split groups in half: first half plays Round 1, second half plays Round 2. */
@@ -67,6 +88,51 @@ async function fetchGroups(): Promise<Group[]> {
     .order("created_at", { ascending: true });
   if (error || !data) return [];
   return (data as TeamRow[]).map(toGroup);
+}
+
+export async function ensureQuestion(round: number, questionNumber: number) {
+  const { data, error } = await supabase.rpc("ensure_quiz_question", {
+    p_round: round,
+    p_question_number: questionNumber,
+  });
+  if (error || !data) throw error ?? new Error("Unable to start question");
+  return data as QuizQuestionState;
+}
+
+export async function fetchQuestionData(questionId: string) {
+  const [{ data: question, error: questionError }, { data: answers, error: answersError }] =
+    await Promise.all([
+      supabase.from("quiz_questions").select("*").eq("id", questionId).single(),
+      supabase
+        .from("quiz_answer_events")
+        .select("*")
+        .eq("question_id", questionId)
+        .order("answer_order", { ascending: true }),
+    ]);
+  if (questionError || answersError || !question) throw questionError ?? answersError;
+  return { question: question as QuizQuestionState, answers: (answers ?? []) as QuizAnswerEvent[] };
+}
+
+export async function submitAnswer(
+  round: number,
+  questionNumber: number,
+  teamId: string,
+  selectedAnswer: number,
+  correctAnswer: number,
+) {
+  const { data, error } = await supabase.rpc("submit_quiz_answer", {
+    p_round: round,
+    p_question_number: questionNumber,
+    p_team_id: teamId,
+    p_selected_answer: selectedAnswer,
+    p_correct_answer: correctAnswer,
+  });
+  if (error) throw error;
+  return data?.[0] ?? null;
+}
+
+export async function expireQuestion(questionId: string) {
+  await supabase.rpc("expire_quiz_question", { p_question_id: questionId });
 }
 
 /** Shared, database-backed competition state. Supabase is the single source of truth. */
@@ -139,7 +205,6 @@ export function useQuiz() {
         .update(patch as never)
         .eq("id", groupId);
 
-
       await supabase.rpc("recalculate_qualification");
       setState(await fetchGroups());
     },
@@ -179,9 +244,7 @@ export function bracketWinner(groups: Group[], bracket: 1 | 2) {
 
 /** The two Round 3 qualifiers: Round 1 winner and Round 2 winner. */
 export function finalists(groups: Group[]) {
-  return [bracketWinner(groups, 1), bracketWinner(groups, 2)].filter(
-    (g): g is Group => g !== null,
-  );
+  return [bracketWinner(groups, 1), bracketWinner(groups, 2)].filter((g): g is Group => g !== null);
 }
 
 /** Groups allowed to play a given round. */
