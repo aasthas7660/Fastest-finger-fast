@@ -1,44 +1,35 @@
-# Quiz Refresh
+# 🏁  FASTEST-FINGER-FIRST
 
-Update the existing website: https://round-robin-racer.lovable.app/
+**Race. Compete. Track your progress.**
 
-Only update the quiz questions. Do not change the design, layout, functionality, navigation, scoring logic, database structure, authentication, styling, animations, or any other part of the website.
+Round Robin Racer is a web-based racing experience built around the round-robin competition concept. It aims to bring an interactive and engaging racing experience to users through a simple web interface.
 
-Use the exact round-wise questions from this Google Doc: https://docs.google.com/document/d/17ZEKLofML7BNX7USSXcwsHMEz1_SNMBdRYDlDd3eX_I/edit?pli=1&tab=t.0
+🌐 **Live Website:** [Round Robin Racer](https://round-robin-racer.lovable.app/)
 
-Required changes:
+---
 
-Remove the current 6 questions.
+## 🎯 About the Project
 
-Add exactly 15 questions from the document’s Round 1 section to Round 1.
+Round Robin Racer is a web development project focused on creating an engaging racing-themed experience. The project explores interactive web design, user engagement, and competition-based gameplay.
 
-Add exactly 15 questions from the document’s Round 2 section to Round 2.
+## ✨ Features
 
-Add exactly 10 questions from the document’s Round 3 section to Round 3.
+*Add the confirmed features of your application here.*
 
-Copy every question, answer choice, and correct answer exactly as provided in the document.
+## 🛠️ Tech Stack
 
-Keep questions assigned to their correct rounds and ensure all 40 questions work correctly.
+*To be updated based on the actual project implementation.*
 
-Make no other changes to the website.
+## 🚀 Live Demo
 
-This project was built with [Lovable](https://lovable.dev).
+[🏁 Explore Round Robin Racer](https://round-robin-racer.lovable.app/)
 
-## Build with Lovable
+## 💡 Project Goal
 
-Continue developing this project in the [Lovable editor](https://lovable.dev/projects/a21bbc84-9dee-44ed-b28f-6bfe2af97976).
+The goal of Round Robin Racer is to combine an engaging user interface with an interactive racing experience while exploring modern web development concepts.
 
-- **Ship faster**: describe what you want to build and Lovable handles the code.
-- **Stay in sync**: every change made in Lovable is committed straight to this repository.
-- **Full ownership**: this code is yours. Push to `main` on GitHub and your changes sync back into Lovable, ready for your next prompt.
+---
 
-## Development
-
-Prefer working locally? You need Node.js and npm — [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating).
-
-```sh
-git clone <this-repository-url>
-cd <repository-name>
-npm i
-npm run dev
-```
+<p align="center">
+  Built with ❤️ and a passion for racing.
+</p>
